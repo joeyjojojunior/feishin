@@ -32,6 +32,14 @@ export const SidebarSettings = memo(() => {
         });
     };
 
+    const handleSetSidebarPlaylistSongDropImmediateAdd = (e: ChangeEvent<HTMLInputElement>) => {
+        setSettings({
+            general: {
+                sidebarPlaylistSongDropImmediateAdd: e.target.checked,
+            },
+        });
+    };
+
     const handleSetSidebarCollapsedNavigation = (e: ChangeEvent<HTMLInputElement>) => {
         setSettings({
             general: {
@@ -102,6 +110,21 @@ export const SidebarSettings = memo(() => {
                 postProcess: 'sentenceCase',
             }),
             title: t('setting.sidebarPlaylistSorting', { postProcess: 'sentenceCase' }),
+        },
+        {
+            control: (
+                <Switch
+                    checked={settings.sidebarPlaylistSongDropImmediateAdd}
+                    onChange={handleSetSidebarPlaylistSongDropImmediateAdd}
+                />
+            ),
+            description: t('setting.sidebarPlaylistSongDropImmediateAdd', {
+                context: 'description',
+                postProcess: 'sentenceCase',
+            }),
+            title: t('setting.sidebarPlaylistSongDropImmediateAdd', {
+                postProcess: 'sentenceCase',
+            }),
         },
         {
             control: (

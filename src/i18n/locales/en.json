@@ -1012,6 +1012,8 @@
         "sidebarPlaylistList": "sidebar playlist list",
         "sidebarPlaylistSorting_description": "allows manual playlist sorting in the sidebar using drag and drop instead of the default server order",
         "sidebarPlaylistSorting": "sidebar playlist sorting",
+        "sidebarPlaylistSongDropImmediateAdd_description": "when enabled, dropping songs on a sidebar playlist adds them immediately without opening the add-to-playlist dialog",
+        "sidebarPlaylistSongDropImmediateAdd": "sidebar song drop immediate add",
         "sidebarPlaylistListFilterRegex_description": "hide playlists in the sidebar that match this regular expression",
         "sidebarPlaylistListFilterRegex_placeholder": "e.g. ^Daily Mix.*",
         "sidebarPlaylistListFilterRegex": "playlist filter regex",

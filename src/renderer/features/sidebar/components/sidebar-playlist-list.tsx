@@ -12,6 +12,7 @@ import { ContextMenuController } from '/@/renderer/features/context-menu/context
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { openCreatePlaylistModal } from '/@/renderer/features/playlists/components/create-playlist-form';
+import { useAddToPlaylist } from '/@/renderer/features/playlists/mutations/add-to-playlist-mutation';
 import {
     LONG_PRESS_PLAY_BEHAVIOR,
     PlayTooltip,
@@ -24,6 +25,7 @@ import {
     useCurrentServerId,
     usePermissions,
     useSidebarPlaylistListFilterRegex,
+    useSidebarPlaylistSongDropImmediateAdd,
     useSidebarPlaylistSorting,
 } from '/@/renderer/store';
 import { formatDurationString } from '/@/renderer/utils';
@@ -34,6 +36,7 @@ import { Group } from '/@/shared/components/group/group';
 import { Icon } from '/@/shared/components/icon/icon';
 import { Image } from '/@/shared/components/image/image';
 import { Text } from '/@/shared/components/text/text';
+import { toast } from '/@/shared/components/toast/toast';
 import { useLocalStorage } from '/@/shared/hooks/use-local-storage';
 import {
     LibraryItem,
@@ -51,15 +54,25 @@ const getPlaylistOrderKey = (serverId: string | undefined, scope: 'owned' | 'sha
 };
 
 interface PlaylistRowButtonProps extends Omit<ButtonProps, 'onContextMenu' | 'onPlay'> {
+    addSongDropImmediately: boolean;
     item: Playlist;
     name: string;
+    onAddSongsToPlaylist: (playlistId: string, songIds: string[]) => void;
     onContextMenu: (e: MouseEvent<HTMLAnchorElement>, item: Playlist) => void;
     onReorder?: (sourceIds: string[], targetId: string, edge: 'bottom' | 'top' | null) => void;
     to: string;
 }
 
 const PlaylistRowButton = memo(
-    ({ item, name, onContextMenu, onReorder, to }: PlaylistRowButtonProps) => {
+    ({
+        addSongDropImmediately,
+        item,
+        name,
+        onAddSongsToPlaylist,
+        onContextMenu,
+        onReorder,
+        to,
+    }: PlaylistRowButtonProps) => {
         const url = {
             pathname: generatePath(AppRoute.PLAYLISTS_DETAIL_SONGS, { playlistId: to }),
             state: { item },
@@ -135,6 +148,27 @@ const PlaylistRowButton = memo(
                         }
 
                         onReorder(sourceIds, to, args.edge);
+                        return;
+                    }
+
+                    if (
+                        addSongDropImmediately &&
+                        [
+                            LibraryItem.PLAYLIST_SONG,
+                            LibraryItem.QUEUE_SONG,
+                            LibraryItem.SONG,
+                        ].includes(sourceItemType)
+                    ) {
+                        const songIds =
+                            args.source.item && Array.isArray(args.source.item)
+                                ? (args.source.item as Song[]).map((song) => song.id)
+                                : sourceIds;
+
+                        if (songIds.length === 0) {
+                            return;
+                        }
+
+                        onAddSongsToPlaylist(to, songIds);
                         return;
                     }
 
@@ -357,8 +391,11 @@ export const SidebarPlaylistList = () => {
     const player = usePlayer();
     const { t } = useTranslation();
     const server = useCurrentServer();
+    const serverId = server?.id;
+    const sidebarPlaylistSongDropImmediateAdd = useSidebarPlaylistSongDropImmediateAdd();
     const sidebarPlaylistSorting = useSidebarPlaylistSorting();
     const filterRegex = useSidebarPlaylistListFilterRegex();
+    const addToPlaylistMutation = useAddToPlaylist({});
 
     const playlistsQuery = useQuery(
         playlistsQueries.list({
@@ -373,9 +410,10 @@ export const SidebarPlaylistList = () => {
 
     const handlePlayPlaylist = useCallback(
         (id: string, playType: Play) => {
-            player.addToQueueByFetch(server.id, [id], LibraryItem.PLAYLIST, playType);
+            if (!serverId) return;
+            player.addToQueueByFetch(serverId, [id], LibraryItem.PLAYLIST, playType);
         },
-        [player, server.id],
+        [player, serverId],
     );
 
     const handleContextMenu = useCallback(
@@ -388,6 +426,40 @@ export const SidebarPlaylistList = () => {
             });
         },
         [],
+    );
+
+    const handleAddSongsToPlaylist = useCallback(
+        (playlistId: string, songIds: string[]) => {
+            if (!serverId || songIds.length === 0) {
+                return;
+            }
+
+            addToPlaylistMutation.mutate(
+                {
+                    apiClientProps: { serverId },
+                    body: { songId: songIds },
+                    query: { id: playlistId },
+                },
+                {
+                    onError: (err) => {
+                        toast.error({
+                            message: err.message,
+                            title: t('error.genericError', { postProcess: 'sentenceCase' }),
+                        });
+                    },
+                    onSuccess: () => {
+                        toast.success({
+                            message: t('form.addToPlaylist.success', {
+                                message: songIds.length,
+                                numOfPlaylists: 1,
+                                postProcess: 'sentenceCase',
+                            }),
+                        });
+                    },
+                },
+            );
+        },
+        [addToPlaylistMutation, serverId, t],
     );
 
     const [playlistOrder, setPlaylistOrder] = useLocalStorage<string[]>({
@@ -531,9 +603,11 @@ export const SidebarPlaylistList = () => {
             <Accordion.Panel>
                 {playlistItems?.items?.map((item, index) => (
                     <PlaylistRowButton
+                        addSongDropImmediately={sidebarPlaylistSongDropImmediateAdd}
                         item={item}
                         key={index}
                         name={item.name}
+                        onAddSongsToPlaylist={handleAddSongsToPlaylist}
                         onContextMenu={handleContextMenu}
                         onReorder={handleReorder}
                         to={item.id}
@@ -548,8 +622,11 @@ export const SidebarSharedPlaylistList = () => {
     const player = usePlayer();
     const { t } = useTranslation();
     const server = useCurrentServer();
+    const serverId = server?.id;
+    const sidebarPlaylistSongDropImmediateAdd = useSidebarPlaylistSongDropImmediateAdd();
     const sidebarPlaylistSorting = useSidebarPlaylistSorting();
     const filterRegex = useSidebarPlaylistListFilterRegex();
+    const addToPlaylistMutation = useAddToPlaylist({});
 
     const playlistsQuery = useQuery(
         playlistsQueries.list({
@@ -564,10 +641,10 @@ export const SidebarSharedPlaylistList = () => {
 
     const handlePlayPlaylist = useCallback(
         (id: string, playType: Play) => {
-            if (!server?.id) return;
-            player.addToQueueByFetch(server.id, [id], LibraryItem.PLAYLIST, playType);
+            if (!serverId) return;
+            player.addToQueueByFetch(serverId, [id], LibraryItem.PLAYLIST, playType);
         },
-        [player, server.id],
+        [player, serverId],
     );
 
     const handleContextMenu = useCallback(
@@ -583,6 +660,40 @@ export const SidebarSharedPlaylistList = () => {
             });
         },
         [],
+    );
+
+    const handleAddSongsToPlaylist = useCallback(
+        (playlistId: string, songIds: string[]) => {
+            if (!serverId || songIds.length === 0) {
+                return;
+            }
+
+            addToPlaylistMutation.mutate(
+                {
+                    apiClientProps: { serverId },
+                    body: { songId: songIds },
+                    query: { id: playlistId },
+                },
+                {
+                    onError: (err) => {
+                        toast.error({
+                            message: err.message,
+                            title: t('error.genericError', { postProcess: 'sentenceCase' }),
+                        });
+                    },
+                    onSuccess: () => {
+                        toast.success({
+                            message: t('form.addToPlaylist.success', {
+                                message: songIds.length,
+                                numOfPlaylists: 1,
+                                postProcess: 'sentenceCase',
+                            }),
+                        });
+                    },
+                },
+            );
+        },
+        [addToPlaylistMutation, serverId, t],
     );
 
     const [playlistOrder, setPlaylistOrder] = useLocalStorage<string[]>({
@@ -692,9 +803,11 @@ export const SidebarSharedPlaylistList = () => {
             <Accordion.Panel>
                 {playlistItems?.items?.map((item, index) => (
                     <PlaylistRowButton
+                        addSongDropImmediately={sidebarPlaylistSongDropImmediateAdd}
                         item={item}
                         key={index}
                         name={item.name}
+                        onAddSongsToPlaylist={handleAddSongsToPlaylist}
                         onContextMenu={handleContextMenu}
                         onReorder={handleReorder}
                         to={item.id}

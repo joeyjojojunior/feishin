@@ -472,6 +472,7 @@ export const GeneralSettingsSchema = z.object({
     sidebarPanelOrder: z.array(SidebarPanelTypeSchema),
     sidebarPlaylistList: z.boolean(),
     sidebarPlaylistListFilterRegex: z.string(),
+    sidebarPlaylistSongDropImmediateAdd: z.boolean(),
     sidebarPlaylistSorting: z.boolean(),
     sideQueueType: SideQueueTypeSchema,
     skipButtons: SkipButtonsSchema,
@@ -1061,6 +1062,7 @@ const initialState: SettingsState = {
         sidebarPanelOrder: ['queue', 'lyrics', 'visualizer'],
         sidebarPlaylistList: true,
         sidebarPlaylistListFilterRegex: '',
+        sidebarPlaylistSongDropImmediateAdd: false,
         sidebarPlaylistSorting: false,
         sideQueueType: 'sideQueue',
         skipButtons: {
@@ -2402,6 +2404,9 @@ export const useSidebarPlaylistSorting = () =>
 
 export const useSidebarPlaylistListFilterRegex = () =>
     useSettingsStore((state) => state.general.sidebarPlaylistListFilterRegex, shallow);
+
+export const useSidebarPlaylistSongDropImmediateAdd = () =>
+    useSettingsStore((state) => state.general.sidebarPlaylistSongDropImmediateAdd, shallow);
 
 export const useSidebarItems = () =>
     useSettingsStore((state) => state.general.sidebarItems, shallow);
