@@ -32,6 +32,7 @@ export interface ItemControls {
         edge: 'bottom' | 'left' | 'right' | 'top' | null;
     }) => void;
     onColumnResized?: ({ columnId, width }: { columnId: TableColumn; width: number }) => void;
+    onDelete?: ({ index, internalState, item, itemType }: DefaultItemControlProps) => void;
     onDoubleClick?: ({ index, internalState, item, itemType }: DefaultItemControlProps) => void;
     onExpand?: ({ index, internalState, item, itemType }: DefaultItemControlProps) => void;
     onFavorite?: ({

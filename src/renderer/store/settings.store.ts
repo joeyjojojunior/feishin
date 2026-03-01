@@ -434,6 +434,7 @@ export const GeneralSettingsSchema = z.object({
     buttonSize: z.number(),
     collections: z.array(CollectionSchema),
     combinedLyricsAndVisualizer: z.boolean(),
+    confirmRemoveFromPlaylist: z.boolean(),
     disabledContextMenu: z.record(z.string(), z.boolean()),
     enableGridMultiSelect: z.boolean(),
     externalLinks: z.boolean(),
@@ -1018,6 +1019,7 @@ const initialState: SettingsState = {
         buttonSize: 15,
         collections: [],
         combinedLyricsAndVisualizer: false,
+        confirmRemoveFromPlaylist: true,
         disabledContextMenu: {},
         enableGridMultiSelect: false,
         externalLinks: true,
@@ -2350,6 +2352,9 @@ export const useGenreTarget = () => useSettingsStore((store) => store.general.ge
 
 export const usePlaylistTarget = () =>
     useSettingsStore((store) => store.general.playlistTarget, shallow);
+
+export const useConfirmRemoveFromPlaylist = () =>
+    useSettingsStore((store) => store.general.confirmRemoveFromPlaylist, shallow);
 
 export const useLanguage = () => useSettingsStore((state) => state.general.language, shallow);
 

@@ -119,5 +119,28 @@ export const useListHotkeys = ({
                 }
             },
         ],
+        [
+            'Delete',
+            () => {
+                if (!focused || itemType !== LibraryItem.PLAYLIST_SONG || !controls.onDelete) {
+                    return;
+                }
+
+                const selected = internalState.getSelected();
+                const validSelected = selected.filter(hasRequiredStateItemProperties);
+
+                if (validSelected.length === 0) {
+                    return;
+                }
+
+                const item = validSelected[0];
+                controls.onDelete({
+                    event: null,
+                    internalState,
+                    item,
+                    itemType,
+                } as any);
+            },
+        ],
     ]);
 };

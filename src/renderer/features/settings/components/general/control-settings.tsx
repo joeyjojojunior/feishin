@@ -210,6 +210,27 @@ export const ControlSettings = memo(() => {
         },
         {
             control: (
+                <Switch
+                    checked={settings.confirmRemoveFromPlaylist}
+                    onChange={(e) =>
+                        setSettings({
+                            general: {
+                                ...settings,
+                                confirmRemoveFromPlaylist: e.currentTarget.checked,
+                            },
+                        })
+                    }
+                />
+            ),
+            description: t('setting.confirmRemoveFromPlaylist', {
+                context: 'description',
+                postProcess: 'sentenceCase',
+            }),
+            isHidden: false,
+            title: t('setting.confirmRemoveFromPlaylist', { postProcess: 'sentenceCase' }),
+        },
+        {
+            control: (
                 <NumberInput
                     defaultValue={settings.artistRadioCount}
                     max={200}

@@ -11,6 +11,7 @@ import { ItemControls, ItemListTableComponentProps } from '/@/renderer/component
 import { useListContext } from '/@/renderer/context/list-context';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { usePlaylistSongListFilters } from '/@/renderer/features/playlists/hooks/use-playlist-song-list-filters';
+import { usePlaylistSongRemoval } from '/@/renderer/features/playlists/hooks/use-playlist-song-removal';
 import { useSearchTermFilter } from '/@/renderer/features/shared/hooks/use-search-term-filter';
 import { searchLibraryItems } from '/@/renderer/features/shared/utils';
 import { usePlayerSong } from '/@/renderer/store';
@@ -53,6 +54,7 @@ export const PlaylistDetailSongListTable = forwardRef<any, PlaylistDetailSongLis
         },
         ref,
     ) => {
+        const { removeSongsFromPlaylist } = usePlaylistSongRemoval({ enableUndoHotkey: true });
         const { handleOnScrollEnd, scrollOffset } = useItemListScrollPersist({
             enabled: saveScrollOffset,
         });
@@ -96,6 +98,108 @@ export const PlaylistDetailSongListTable = forwardRef<any, PlaylistDetailSongLis
 
         const overrideControls: Partial<ItemControls> = useMemo(() => {
             return {
+                onDelete: ({ internalState }) => {
+                    if (!internalState) return;
+
+                    const currentSongs = internalState
+                        .getData()
+                        .filter(
+                            (item): item is Song =>
+                                typeof item === 'object' &&
+                                item !== null &&
+                                'id' in item &&
+                                'playlistItemId' in item &&
+                                typeof (item as Song).id === 'string',
+                        );
+
+                    const currentPlaylistItemIds = new Set(
+                        currentSongs
+                            .map((item) => item.playlistItemId)
+                            .filter((id): id is string => Boolean(id)),
+                    );
+
+                    const selectedSongs = internalState
+                        .getSelected()
+                        .filter(
+                            (item): item is Song =>
+                                typeof item === 'object' &&
+                                item !== null &&
+                                'id' in item &&
+                                'playlistItemId' in item &&
+                                typeof (item as Song).id === 'string',
+                        );
+
+                    if (selectedSongs.length === 0) return;
+
+                    const selectedSongsInCurrentData = selectedSongs.filter((song) =>
+                        currentPlaylistItemIds.has(song.playlistItemId ?? ''),
+                    );
+
+                    if (selectedSongsInCurrentData.length === 0) return;
+
+                    const selectedPlaylistItemIdSet = new Set(
+                        selectedSongsInCurrentData
+                            .map((song) => song.playlistItemId)
+                            .filter((id): id is string => Boolean(id)),
+                    );
+                    const firstSelectedIndex = currentSongs.findIndex((song) =>
+                        selectedPlaylistItemIdSet.has(song.playlistItemId ?? ''),
+                    );
+                    const deletedPlaylistItemIds = new Set(
+                        selectedSongsInCurrentData
+                            .map((song) => song.playlistItemId)
+                            .filter((id): id is string => Boolean(id)),
+                    );
+
+                    removeSongsFromPlaylist(selectedSongsInCurrentData, {
+                        onSuccess: () => {
+                            let attempts = 0;
+                            const maxAttempts = 30;
+
+                            const trySetNextSelection = () => {
+                                const latestSongs = internalState
+                                    .getData()
+                                    .filter(
+                                        (item): item is Song =>
+                                            typeof item === 'object' &&
+                                            item !== null &&
+                                            'id' in item &&
+                                            'playlistItemId' in item &&
+                                            typeof (item as Song).id === 'string',
+                                    );
+
+                                const stillHasDeletedSongs = latestSongs.some((song) =>
+                                    deletedPlaylistItemIds.has(song.playlistItemId ?? ''),
+                                );
+
+                                if (stillHasDeletedSongs && attempts < maxAttempts) {
+                                    attempts += 1;
+                                    setTimeout(trySetNextSelection, 50);
+                                    return;
+                                }
+
+                                if (latestSongs.length === 0 || firstSelectedIndex < 0) {
+                                    internalState.clearSelected();
+                                    return;
+                                }
+
+                                const targetIndex = Math.min(
+                                    firstSelectedIndex,
+                                    latestSongs.length - 1,
+                                );
+                                const nextSelection = latestSongs[targetIndex];
+
+                                if (nextSelection) {
+                                    internalState.setSelected([nextSelection]);
+                                } else {
+                                    internalState.clearSelected();
+                                }
+                            };
+
+                            setTimeout(trySetNextSelection, 0);
+                        },
+                    });
+                },
                 onDoubleClick: ({ index, internalState, item, meta }) => {
                     if (!item) {
                         return;
@@ -109,7 +213,7 @@ export const PlaylistDetailSongListTable = forwardRef<any, PlaylistDetailSongLis
                     }
                 },
             };
-        }, [player]);
+        }, [player, removeSongsFromPlaylist]);
 
         const getRowId = useMemo(() => {
             return (item: unknown) => {
@@ -203,6 +307,7 @@ export const PlaylistDetailSongListEditTable = forwardRef<any, PlaylistDetailSon
         },
         ref,
     ) => {
+        const { removeSongsFromPlaylist } = usePlaylistSongRemoval({ enableUndoHotkey: true });
         const { handleOnScrollEnd, scrollOffset } = useItemListScrollPersist({
             enabled: saveScrollOffset,
         });
@@ -221,6 +326,108 @@ export const PlaylistDetailSongListEditTable = forwardRef<any, PlaylistDetailSon
 
         const overrideControls: Partial<ItemControls> = useMemo(() => {
             return {
+                onDelete: ({ internalState }) => {
+                    if (!internalState) return;
+
+                    const currentSongs = internalState
+                        .getData()
+                        .filter(
+                            (item): item is Song =>
+                                typeof item === 'object' &&
+                                item !== null &&
+                                'id' in item &&
+                                'playlistItemId' in item &&
+                                typeof (item as Song).id === 'string',
+                        );
+
+                    const currentPlaylistItemIds = new Set(
+                        currentSongs
+                            .map((item) => item.playlistItemId)
+                            .filter((id): id is string => Boolean(id)),
+                    );
+
+                    const selectedSongs = internalState
+                        .getSelected()
+                        .filter(
+                            (item): item is Song =>
+                                typeof item === 'object' &&
+                                item !== null &&
+                                'id' in item &&
+                                'playlistItemId' in item &&
+                                typeof (item as Song).id === 'string',
+                        );
+
+                    if (selectedSongs.length === 0) return;
+
+                    const selectedSongsInCurrentData = selectedSongs.filter((song) =>
+                        currentPlaylistItemIds.has(song.playlistItemId ?? ''),
+                    );
+
+                    if (selectedSongsInCurrentData.length === 0) return;
+
+                    const selectedPlaylistItemIdSet = new Set(
+                        selectedSongsInCurrentData
+                            .map((song) => song.playlistItemId)
+                            .filter((id): id is string => Boolean(id)),
+                    );
+                    const firstSelectedIndex = currentSongs.findIndex((song) =>
+                        selectedPlaylistItemIdSet.has(song.playlistItemId ?? ''),
+                    );
+                    const deletedPlaylistItemIds = new Set(
+                        selectedSongsInCurrentData
+                            .map((song) => song.playlistItemId)
+                            .filter((id): id is string => Boolean(id)),
+                    );
+
+                    removeSongsFromPlaylist(selectedSongsInCurrentData, {
+                        onSuccess: () => {
+                            let attempts = 0;
+                            const maxAttempts = 30;
+
+                            const trySetNextSelection = () => {
+                                const latestSongs = internalState
+                                    .getData()
+                                    .filter(
+                                        (item): item is Song =>
+                                            typeof item === 'object' &&
+                                            item !== null &&
+                                            'id' in item &&
+                                            'playlistItemId' in item &&
+                                            typeof (item as Song).id === 'string',
+                                    );
+
+                                const stillHasDeletedSongs = latestSongs.some((song) =>
+                                    deletedPlaylistItemIds.has(song.playlistItemId ?? ''),
+                                );
+
+                                if (stillHasDeletedSongs && attempts < maxAttempts) {
+                                    attempts += 1;
+                                    setTimeout(trySetNextSelection, 50);
+                                    return;
+                                }
+
+                                if (latestSongs.length === 0 || firstSelectedIndex < 0) {
+                                    internalState.clearSelected();
+                                    return;
+                                }
+
+                                const targetIndex = Math.min(
+                                    firstSelectedIndex,
+                                    latestSongs.length - 1,
+                                );
+                                const nextSelection = latestSongs[targetIndex];
+
+                                if (nextSelection) {
+                                    internalState.setSelected([nextSelection]);
+                                } else {
+                                    internalState.clearSelected();
+                                }
+                            };
+
+                            setTimeout(trySetNextSelection, 0);
+                        },
+                    });
+                },
                 onDoubleClick: ({ index, internalState, item, meta }) => {
                     if (!item) {
                         return;
@@ -234,7 +441,7 @@ export const PlaylistDetailSongListEditTable = forwardRef<any, PlaylistDetailSon
                     }
                 },
             };
-        }, [player]);
+        }, [player, removeSongsFromPlaylist]);
 
         const getRowId = useMemo(() => {
             return (item: unknown) => {

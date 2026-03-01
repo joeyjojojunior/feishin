@@ -34,6 +34,7 @@
         "viewPlaylists": "view $t(entity.playlist, {\"count\": 2})",
         "viewMore": "view more",
         "openApplicationDirectory": "open application directory",
+        "undo": "undo",
         "openIn": {
             "lastfm": "Open in Last.fm",
             "musicbrainz": "Open in MusicBrainz"
@@ -819,6 +820,8 @@
         "externalLinks": "show external links",
         "followCurrentSong_description": "automatically scroll the play queue to the current playing song",
         "followCurrentSong": "follow current song",
+        "confirmRemoveFromPlaylist_description": "show a confirmation dialog when removing tracks from a playlist",
+        "confirmRemoveFromPlaylist": "confirm playlist track removal",
         "followLyric_description": "scroll the lyric to the current playing position",
         "followLyric": "follow current lyric",
         "font_description": "sets the font to use for the application",
