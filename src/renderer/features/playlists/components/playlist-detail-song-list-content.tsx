@@ -239,6 +239,43 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
         };
     }, [playlistId]);
 
+    // Keep edit-mode local data in sync with server changes (delete/undo) without
+    // discarding unsaved local ordering.
+    useEffect(() => {
+        setLocalData((prev) => {
+            const getSongKey = (song: Song) => song.playlistItemId || song.id;
+
+            const incomingItems = data?.items ?? [];
+            const previousItems = prev?.items ?? [];
+
+            const incomingByKey = new Map(incomingItems.map((song) => [getSongKey(song), song]));
+            const preservedOrderItems = previousItems
+                .filter((song) => incomingByKey.has(getSongKey(song)))
+                .map((song) => incomingByKey.get(getSongKey(song)) ?? song);
+
+            const preservedKeys = new Set(preservedOrderItems.map(getSongKey));
+            const appendedIncomingItems = incomingItems.filter(
+                (song) => !preservedKeys.has(getSongKey(song)),
+            );
+
+            const mergedItems = [...preservedOrderItems, ...appendedIncomingItems];
+            const isSameOrderAndLength =
+                mergedItems.length === previousItems.length &&
+                mergedItems.every(
+                    (song, index) => getSongKey(song) === getSongKey(previousItems[index]),
+                );
+
+            if (isSameOrderAndLength) {
+                return prev;
+            }
+
+            return {
+                ...data,
+                items: mergedItems,
+            };
+        });
+    }, [data]);
+
     const columns = useMemo(() => {
         return [
             {

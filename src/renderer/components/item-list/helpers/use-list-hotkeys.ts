@@ -122,7 +122,19 @@ export const useListHotkeys = ({
         [
             'Delete',
             () => {
-                if (!focused || itemType !== LibraryItem.PLAYLIST_SONG || !controls.onDelete) {
+                if (itemType !== LibraryItem.PLAYLIST_SONG || !controls.onDelete) {
+                    return;
+                }
+
+                const activeElement = document.activeElement as HTMLElement | null;
+                const tagName = activeElement?.tagName?.toLowerCase();
+                const isInput =
+                    tagName === 'input' ||
+                    tagName === 'textarea' ||
+                    tagName === 'select' ||
+                    activeElement?.getAttribute('contenteditable') === 'true';
+
+                if (isInput) {
                     return;
                 }
 
