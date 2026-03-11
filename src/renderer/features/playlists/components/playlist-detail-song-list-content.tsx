@@ -1,5 +1,6 @@
 import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
 import { useItemListPagination } from '/@/renderer/components/item-list/item-list-pagination/use-item-list-pagination';
@@ -9,8 +10,10 @@ import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { PlaylistDetailAlbumView } from '/@/renderer/features/playlists/components/playlist-detail-album-view';
 import { usePlaylistTrackList } from '/@/renderer/features/playlists/hooks/use-playlist-track-list';
-import { useCurrentServer, useListSettings } from '/@/renderer/store';
+import { useReplacePlaylist } from '/@/renderer/features/playlists/mutations/replace-playlist-mutation';
+import { useCurrentServer, useCurrentServerId, useListSettings } from '/@/renderer/store';
 import { Spinner } from '/@/shared/components/spinner/spinner';
+import { toast } from '/@/shared/components/toast/toast';
 import {
     LibraryItem,
     PlaylistSongListQuery,
@@ -47,6 +50,8 @@ const PlaylistDetailSongListGrid = lazy(() =>
         }),
     ),
 );
+
+const getPlaylistSongKey = (song: Song) => song.playlistItemId || song.id;
 
 export const PlaylistDetailSongListContent = () => {
     const { playlistId } = useParams() as { playlistId: string };
@@ -152,13 +157,22 @@ export const PlaylistDetailSongListView = ({ data, items }: PlaylistDetailSongLi
 };
 
 export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListResponse }) => {
+    const { t } = useTranslation();
     const { playlistId } = useParams() as { playlistId: string };
     const server = useCurrentServer();
+    const serverId = useCurrentServerId();
     const { display, table } = useListSettings(ItemListKey.PLAYLIST_SONG);
+    const replacePlaylistMutation = useReplacePlaylist({});
+    const {
+        isPending: isReplacePlaylistPending,
+        mutate: mutateReplacePlaylist,
+    } = replacePlaylistMutation;
 
     const [localData, setLocalData] = useState<PlaylistSongListResponse>(data);
 
     const tableRef = useRef<ItemListHandle | null>(null);
+    const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const syncedOrderSignatureRef = useRef<string>('');
 
     // Listen for playlist reorder events
     useEffect(() => {
@@ -179,7 +193,7 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
                 }
 
                 // Create a list of IDs in current order
-                const currentIds = prev.items.map((item) => item.id);
+                const currentIds = prev.items.map((item) => getPlaylistSongKey(item));
 
                 // Find the target index
                 const targetIndex = currentIds.indexOf(payload.targetId);
@@ -218,7 +232,9 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
                 ];
 
                 // Create a map for quick lookup
-                const itemMap = new Map(prev.items.map((item) => [item.id, item]));
+                const itemMap = new Map(
+                    prev.items.map((song) => [getPlaylistSongKey(song), song]),
+                );
 
                 // Reorder items based on new ID order
                 const reorderedItems = reorderedIds
@@ -243,26 +259,27 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
     // discarding unsaved local ordering.
     useEffect(() => {
         setLocalData((prev) => {
-            const getSongKey = (song: Song) => song.playlistItemId || song.id;
-
             const incomingItems = data?.items ?? [];
             const previousItems = prev?.items ?? [];
 
-            const incomingByKey = new Map(incomingItems.map((song) => [getSongKey(song), song]));
+            const incomingByKey = new Map(
+                incomingItems.map((song) => [getPlaylistSongKey(song), song]),
+            );
             const preservedOrderItems = previousItems
-                .filter((song) => incomingByKey.has(getSongKey(song)))
-                .map((song) => incomingByKey.get(getSongKey(song)) ?? song);
+                .filter((song) => incomingByKey.has(getPlaylistSongKey(song)))
+                .map((song) => incomingByKey.get(getPlaylistSongKey(song)) ?? song);
 
-            const preservedKeys = new Set(preservedOrderItems.map(getSongKey));
+            const preservedKeys = new Set(preservedOrderItems.map(getPlaylistSongKey));
             const appendedIncomingItems = incomingItems.filter(
-                (song) => !preservedKeys.has(getSongKey(song)),
+                (song) => !preservedKeys.has(getPlaylistSongKey(song)),
             );
 
             const mergedItems = [...preservedOrderItems, ...appendedIncomingItems];
             const isSameOrderAndLength =
                 mergedItems.length === previousItems.length &&
                 mergedItems.every(
-                    (song, index) => getSongKey(song) === getSongKey(previousItems[index]),
+                    (song, index) =>
+                        getPlaylistSongKey(song) === getPlaylistSongKey(previousItems[index]),
                 );
 
             if (isSameOrderAndLength) {
@@ -275,6 +292,86 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
             };
         });
     }, [data]);
+
+    const localOrderSignature = useMemo(() => {
+        return (localData.items ?? []).map((song) => getPlaylistSongKey(song)).join('|');
+    }, [localData.items]);
+
+    const remoteOrderSignature = useMemo(() => {
+        return (data?.items ?? []).map((song) => getPlaylistSongKey(song)).join('|');
+    }, [data?.items]);
+
+    useEffect(() => {
+        if (!playlistId || !serverId) {
+            return;
+        }
+
+        if (localOrderSignature === remoteOrderSignature) {
+            syncedOrderSignatureRef.current = localOrderSignature;
+            return;
+        }
+
+        if (localOrderSignature === syncedOrderSignatureRef.current) {
+            return;
+        }
+
+        if (isReplacePlaylistPending) {
+            return;
+        }
+
+        const songIds = (localData.items ?? [])
+            .map((song) => song.id)
+            .filter((id): id is string => Boolean(id));
+        if (songIds.length === 0) {
+            return;
+        }
+
+        if (autoSaveTimeoutRef.current) {
+            clearTimeout(autoSaveTimeoutRef.current);
+        }
+
+        const targetOrderSignature = localOrderSignature;
+        autoSaveTimeoutRef.current = setTimeout(() => {
+            mutateReplacePlaylist(
+                {
+                    apiClientProps: { serverId },
+                    body: {
+                        songId: songIds,
+                    },
+                    query: {
+                        id: playlistId,
+                    },
+                },
+                {
+                    onError: (err) => {
+                        toast.error({
+                            message: err.message,
+                            title: t('error.genericError', { postProcess: 'sentenceCase' }),
+                        });
+                    },
+                    onSuccess: () => {
+                        syncedOrderSignatureRef.current = targetOrderSignature;
+                    },
+                },
+            );
+        }, 500);
+
+        return () => {
+            if (autoSaveTimeoutRef.current) {
+                clearTimeout(autoSaveTimeoutRef.current);
+                autoSaveTimeoutRef.current = null;
+            }
+        };
+    }, [
+        isReplacePlaylistPending,
+        localData.items,
+        localOrderSignature,
+        mutateReplacePlaylist,
+        playlistId,
+        remoteOrderSignature,
+        serverId,
+        t,
+    ]);
 
     const columns = useMemo(() => {
         return [
@@ -320,17 +417,13 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
 };
 
 const PlaylistDetailTrackView = ({ data }: { data: PlaylistSongListResponse }) => {
-    const { isSmartPlaylist, mode } = useListContext();
+    const { isSmartPlaylist } = useListContext();
 
     if (isSmartPlaylist) {
         return <PlaylistDetailTrackViewContent data={data} />;
     }
 
-    if (mode === 'edit') {
-        return <PlaylistDetailSongListEdit data={data} />;
-    }
-
-    return <PlaylistDetailTrackViewContent data={data} />;
+    return <PlaylistDetailSongListEdit data={data} />;
 };
 
 const PlaylistDetailTrackViewContent = ({ data }: { data: PlaylistSongListResponse }) => {

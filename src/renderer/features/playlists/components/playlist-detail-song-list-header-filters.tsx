@@ -1,10 +1,8 @@
-import { openContextModal } from '@mantine/modals';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
-import i18n from '/@/i18n/i18n';
 import {
     ALBUM_TABLE_COLUMNS,
     PLAYLIST_SONG_TABLE_COLUMNS,
@@ -118,7 +116,7 @@ export const PlaylistDetailSongListHeaderFilters = ({
     isSmartPlaylist,
 }: PlaylistDetailSongListHeaderFiltersProps) => {
     const { t } = useTranslation();
-    const { listKey: listKeyFromContext, mode, setMode } = useListContext();
+    const { listKey: listKeyFromContext } = useListContext();
     const { playlistId } = useParams() as { playlistId: string };
     const playlistTarget = usePlaylistTarget();
     const { setPlaylistBehavior } = useSettingsStoreActions();
@@ -154,10 +152,9 @@ export const PlaylistDetailSongListHeaderFilters = ({
         );
     }, [playlistTarget, setPlaylistBehavior]);
 
-    const { ref: containerRef, ...breakpoints } = useContainerQuery();
+    const { ref: containerRef } = useContainerQuery();
 
-    const isViewEditMode = !isSmartPlaylist && (breakpoints.isSm || isAlbumMode);
-    const isEditMode = mode === 'edit';
+    const isEditMode = !isSmartPlaylist;
 
     const [collapsed, setCollapsed] = useLocalStorage<boolean>({
         defaultValue: false,
@@ -193,18 +190,6 @@ export const PlaylistDetailSongListHeaderFilters = ({
                 <MoreButton onClick={handleMore} />
             </Group>
             <Group gap="sm" wrap="nowrap">
-                {isViewEditMode && <SaveAndReplaceButton mode={mode} />}
-                {isViewEditMode && (
-                    <Button
-                        onClick={() => setMode?.(mode === 'edit' ? 'view' : 'edit')}
-                        uppercase
-                        variant="subtle"
-                    >
-                        {mode === 'edit'
-                            ? t('common.view', { postProcess: 'titleCase' })
-                            : t('common.edit', { postProcess: 'titleCase' })}
-                    </Button>
-                )}
                 <Tooltip
                     label={t(`common.${collapsed ? 'expand' : 'collapse'}`, {
                         postProcess: 'titleCase',
@@ -239,41 +224,6 @@ export const PlaylistDetailSongListHeaderFilters = ({
                 )}
             </Group>
         </Flex>
-    );
-};
-
-export const openSaveAndReplaceModal = (playlistId: string, listData: unknown[]) => {
-    openContextModal({
-        innerProps: { listData, playlistId },
-        modalKey: 'saveAndReplace',
-        size: 'sm',
-        title: i18n.t('common.saveAndReplace', { postProcess: 'titleCase' }) as string,
-    });
-};
-
-const SaveAndReplaceButton = ({ mode }: { mode: 'edit' | 'view' | undefined }) => {
-    const { t } = useTranslation();
-    const { playlistId } = useParams() as { playlistId: string };
-    const { listData } = useListContext();
-
-    const handleOpenModal = useCallback(() => {
-        if (!playlistId || !listData) return;
-        openSaveAndReplaceModal(playlistId, listData);
-    }, [playlistId, listData]);
-
-    if (mode === 'view') {
-        return null;
-    }
-
-    return (
-        <Button
-            leftSection={<Icon color="error" icon="save" />}
-            onClick={handleOpenModal}
-            size="sm"
-            variant="subtle"
-        >
-            {t('common.saveAndReplace', { postProcess: 'titleCase' })}
-        </Button>
     );
 };
 // const GenreFilterSelection = () => {

@@ -33,6 +33,24 @@ export const useItemDragDropState = <TElement extends HTMLElement = HTMLDivEleme
     playlistId,
 }: UseItemDragDropStateProps): DragDropState<TElement> => {
     const shouldEnableDrag = enableDrag && isDataRow && !!item;
+    const getRowId = (rowItem: unknown): null | string => {
+        if (!rowItem || typeof rowItem !== 'object') {
+            return null;
+        }
+
+        const extracted = internalState.extractRowId(rowItem);
+        if (extracted) {
+            return extracted;
+        }
+
+        const playlistItemId =
+            'playlistItemId' in rowItem ? (rowItem as { playlistItemId?: string }).playlistItemId : null;
+        if (playlistItemId) {
+            return playlistItemId;
+        }
+
+        return 'id' in rowItem ? ((rowItem as { id?: string }).id ?? null) : null;
+    };
 
     const {
         isDraggedOver,
@@ -47,7 +65,9 @@ export const useItemDragDropState = <TElement extends HTMLElement = HTMLDivEleme
 
                 const draggedItems = getDraggedItems(item as any, internalState);
 
-                return draggedItems.map((draggedItem) => draggedItem.id);
+                return draggedItems
+                    .map((draggedItem) => getRowId(draggedItem))
+                    .filter((id): id is string => Boolean(id));
             },
             getItem: () => {
                 if (!item || !isDataRow) {
@@ -106,8 +126,9 @@ export const useItemDragDropState = <TElement extends HTMLElement = HTMLDivEleme
                 return false;
             },
             getData: () => {
+                const rowId = getRowId(item);
                 return {
-                    id: [(item as unknown as { id: string }).id],
+                    id: rowId ? [rowId] : [],
                     item: [item as unknown as unknown[]],
                     itemType,
                     type: DragTargetMap[itemType] || DragTarget.GENERIC,
@@ -259,20 +280,20 @@ export const useItemDragDropState = <TElement extends HTMLElement = HTMLDivEleme
                     playlistId
                 ) {
                     const sourceItems = (args.source.item || []) as any[];
-                    const targetItem = item as any;
+                    const targetId = getRowId(item);
 
                     if (
                         sourceItems.length > 0 &&
                         args.edge &&
                         (args.edge === 'top' || args.edge === 'bottom') &&
-                        targetItem
+                        targetId
                     ) {
                         // Emit event to reorder playlist songs
                         eventEmitter.emit('PLAYLIST_REORDER', {
                             edge: args.edge,
                             playlistId,
                             sourceIds: args.source.id,
-                            targetId: targetItem.id,
+                            targetId,
                         });
                     }
                 }

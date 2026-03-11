@@ -435,6 +435,7 @@ export const GeneralSettingsSchema = z.object({
     collections: z.array(CollectionSchema),
     combinedLyricsAndVisualizer: z.boolean(),
     confirmRemoveFromPlaylist: z.boolean(),
+    confirmSaveAndReplacePlaylist: z.boolean(),
     disabledContextMenu: z.record(z.string(), z.boolean()),
     enableGridMultiSelect: z.boolean(),
     externalLinks: z.boolean(),
@@ -1020,6 +1021,7 @@ const initialState: SettingsState = {
         collections: [],
         combinedLyricsAndVisualizer: false,
         confirmRemoveFromPlaylist: true,
+        confirmSaveAndReplacePlaylist: true,
         disabledContextMenu: {},
         enableGridMultiSelect: false,
         externalLinks: true,
@@ -2277,10 +2279,16 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     });
                 }
 
+                if (version <= 27) {
+                    if (state.general.confirmSaveAndReplacePlaylist === undefined) {
+                        state.general.confirmSaveAndReplacePlaylist = true;
+                    }
+                }
+
                 return persistedState;
             },
             name: 'store_settings',
-            version: 26,
+            version: 27,
         },
     ),
 );
@@ -2355,6 +2363,9 @@ export const usePlaylistTarget = () =>
 
 export const useConfirmRemoveFromPlaylist = () =>
     useSettingsStore((store) => store.general.confirmRemoveFromPlaylist, shallow);
+
+export const useConfirmSaveAndReplacePlaylist = () =>
+    useSettingsStore((store) => store.general.confirmSaveAndReplacePlaylist, shallow);
 
 export const useLanguage = () => useSettingsStore((state) => state.general.language, shallow);
 

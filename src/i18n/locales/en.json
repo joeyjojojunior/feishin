@@ -822,6 +822,8 @@
         "followCurrentSong": "follow current song",
         "confirmRemoveFromPlaylist_description": "show a confirmation dialog when removing tracks from a playlist",
         "confirmRemoveFromPlaylist": "confirm playlist track removal",
+        "confirmSaveAndReplacePlaylist_description": "show a warning dialog before saving and replacing a playlist in edit mode",
+        "confirmSaveAndReplacePlaylist": "confirm save and replace",
         "followLyric_description": "scroll the lyric to the current playing position",
         "followLyric": "follow current lyric",
         "font_description": "sets the font to use for the application",

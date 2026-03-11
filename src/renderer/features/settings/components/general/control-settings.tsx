@@ -231,6 +231,27 @@ export const ControlSettings = memo(() => {
         },
         {
             control: (
+                <Switch
+                    checked={settings.confirmSaveAndReplacePlaylist}
+                    onChange={(e) =>
+                        setSettings({
+                            general: {
+                                ...settings,
+                                confirmSaveAndReplacePlaylist: e.currentTarget.checked,
+                            },
+                        })
+                    }
+                />
+            ),
+            description: t('setting.confirmSaveAndReplacePlaylist', {
+                context: 'description',
+                postProcess: 'sentenceCase',
+            }),
+            isHidden: false,
+            title: t('setting.confirmSaveAndReplacePlaylist', { postProcess: 'sentenceCase' }),
+        },
+        {
+            control: (
                 <NumberInput
                     defaultValue={settings.artistRadioCount}
                     max={200}
