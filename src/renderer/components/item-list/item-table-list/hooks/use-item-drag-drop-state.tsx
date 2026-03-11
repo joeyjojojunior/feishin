@@ -114,11 +114,9 @@ export const useItemDragDropState = <TElement extends HTMLElement = HTMLDivEleme
                 }
 
                 // Allow drops for PLAYLIST_SONG (playlist reordering)
-                // Only allow drops when drag is started from the reorder handle
                 if (
                     itemType === LibraryItem.PLAYLIST_SONG &&
-                    args.source.itemType === LibraryItem.PLAYLIST_SONG &&
-                    args.source.metadata?.fromReorderHandle === true
+                    args.source.itemType === LibraryItem.PLAYLIST_SONG
                 ) {
                     return true;
                 }
@@ -272,11 +270,9 @@ export const useItemDragDropState = <TElement extends HTMLElement = HTMLDivEleme
                 }
 
                 // Handle PLAYLIST_SONG reordering
-                // Only allow drops when drag is started from the reorder handle
                 if (
                     args.self.itemType === LibraryItem.PLAYLIST_SONG &&
                     args.source.itemType === LibraryItem.PLAYLIST_SONG &&
-                    args.source.metadata?.fromReorderHandle === true &&
                     playlistId
                 ) {
                     const sourceItems = (args.source.item || []) as any[];

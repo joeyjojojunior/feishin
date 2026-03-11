@@ -4,6 +4,7 @@ import { AddToPlaylistAction } from '/@/renderer/features/context-menu/actions/a
 import { DownloadAction } from '/@/renderer/features/context-menu/actions/download-action';
 import { GetInfoAction } from '/@/renderer/features/context-menu/actions/get-info-action';
 import { GoToAction } from '/@/renderer/features/context-menu/actions/go-to-action';
+import { MovePlaylistItemsAction } from '/@/renderer/features/context-menu/actions/move-playlist-items-action';
 import { PlayAction } from '/@/renderer/features/context-menu/actions/play-action';
 import { PlayTrackRadioAction } from '/@/renderer/features/context-menu/actions/play-track-radio-action';
 import { RemoveFromPlaylistAction } from '/@/renderer/features/context-menu/actions/remove-from-playlist-action';
@@ -34,6 +35,7 @@ export const PlaylistSongContextMenu = ({ items, type }: PlaylistSongContextMenu
             <PlayTrackRadioAction disabled={items.length > 1} song={items[0]} />
             <ContextMenu.Divider />
             <RemoveFromPlaylistAction items={items} />
+            <MovePlaylistItemsAction items={items} />
             <ContextMenu.Divider />
             <AddToPlaylistAction items={ids} itemType={type} />
             <ContextMenu.Divider />

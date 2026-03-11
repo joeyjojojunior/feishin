@@ -176,6 +176,22 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
 
     // Listen for playlist reorder events
     useEffect(() => {
+        const reorderItemsById = (
+            previousData: PlaylistSongListResponse,
+            reorderedIds: string[],
+        ): PlaylistSongListResponse => {
+            const previousItems = previousData.items ?? [];
+            const itemMap = new Map(previousItems.map((song) => [getPlaylistSongKey(song), song]));
+            const reorderedItems = reorderedIds
+                .map((id) => itemMap.get(id))
+                .filter((item): item is NonNullable<typeof item> => item !== undefined);
+
+            return {
+                ...previousData,
+                items: reorderedItems,
+            };
+        };
+
         const handleReorder = (payload: {
             edge: 'bottom' | 'top' | null;
             playlistId: string;
@@ -194,6 +210,12 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
 
                 // Create a list of IDs in current order
                 const currentIds = prev.items.map((item) => getPlaylistSongKey(item));
+                const sourceIdSet = new Set(payload.sourceIds);
+                const sourceIdsInCurrentOrder = currentIds.filter((id) => sourceIdSet.has(id));
+
+                if (sourceIdsInCurrentOrder.length === 0) {
+                    return prev;
+                }
 
                 // Find the target index
                 const targetIndex = currentIds.indexOf(payload.targetId);
@@ -202,12 +224,10 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
                 }
 
                 // Remove all source IDs from their current positions
-                const idsWithoutSources = currentIds.filter(
-                    (id) => !payload.sourceIds.includes(id),
-                );
+                const idsWithoutSources = currentIds.filter((id) => !sourceIdSet.has(id));
 
                 // Calculate the insertion index based on the original target position
-                const sourcesBeforeTarget = payload.sourceIds.filter((id) => {
+                const sourcesBeforeTarget = sourceIdsInCurrentOrder.filter((id) => {
                     const sourceIndex = currentIds.indexOf(id);
                     return sourceIndex !== -1 && sourceIndex < targetIndex;
                 }).length;
@@ -227,31 +247,72 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
                 // Insert source IDs at the calculated position
                 const reorderedIds = [
                     ...idsWithoutSources.slice(0, insertIndex),
-                    ...payload.sourceIds,
+                    ...sourceIdsInCurrentOrder,
                     ...idsWithoutSources.slice(insertIndex),
                 ];
 
-                // Create a map for quick lookup
-                const itemMap = new Map(
-                    prev.items.map((song) => [getPlaylistSongKey(song), song]),
-                );
+                return reorderItemsById(prev, reorderedIds);
+            });
+        };
 
-                // Reorder items based on new ID order
-                const reorderedItems = reorderedIds
-                    .map((id) => itemMap.get(id))
-                    .filter((item): item is NonNullable<typeof item> => item !== undefined);
+        const handleMoveToTop = (payload: { playlistId: string; sourceIds: string[] }) => {
+            if (payload.playlistId !== playlistId) {
+                return;
+            }
 
-                return {
-                    ...prev,
-                    items: reorderedItems,
-                };
+            setLocalData((prev) => {
+                if (!prev?.items?.length || payload.sourceIds.length === 0) {
+                    return prev;
+                }
+
+                const currentIds = prev.items.map((item) => getPlaylistSongKey(item));
+                const sourceIdSet = new Set(payload.sourceIds);
+                const sourceIdsInCurrentOrder = currentIds.filter((id) => sourceIdSet.has(id));
+
+                if (sourceIdsInCurrentOrder.length === 0) {
+                    return prev;
+                }
+
+                const idsWithoutSources = currentIds.filter((id) => !sourceIdSet.has(id));
+                const reorderedIds = [...sourceIdsInCurrentOrder, ...idsWithoutSources];
+
+                return reorderItemsById(prev, reorderedIds);
+            });
+        };
+
+        const handleMoveToBottom = (payload: { playlistId: string; sourceIds: string[] }) => {
+            if (payload.playlistId !== playlistId) {
+                return;
+            }
+
+            setLocalData((prev) => {
+                if (!prev?.items?.length || payload.sourceIds.length === 0) {
+                    return prev;
+                }
+
+                const currentIds = prev.items.map((item) => getPlaylistSongKey(item));
+                const sourceIdSet = new Set(payload.sourceIds);
+                const sourceIdsInCurrentOrder = currentIds.filter((id) => sourceIdSet.has(id));
+
+                if (sourceIdsInCurrentOrder.length === 0) {
+                    return prev;
+                }
+
+                const idsWithoutSources = currentIds.filter((id) => !sourceIdSet.has(id));
+                const reorderedIds = [...idsWithoutSources, ...sourceIdsInCurrentOrder];
+
+                return reorderItemsById(prev, reorderedIds);
             });
         };
 
         eventEmitter.on('PLAYLIST_REORDER', handleReorder);
+        eventEmitter.on('PLAYLIST_MOVE_TO_TOP', handleMoveToTop);
+        eventEmitter.on('PLAYLIST_MOVE_TO_BOTTOM', handleMoveToBottom);
 
         return () => {
             eventEmitter.off('PLAYLIST_REORDER', handleReorder);
+            eventEmitter.off('PLAYLIST_MOVE_TO_TOP', handleMoveToTop);
+            eventEmitter.off('PLAYLIST_MOVE_TO_BOTTOM', handleMoveToBottom);
         };
     }, [playlistId]);
 
@@ -373,20 +434,11 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
         t,
     ]);
 
-    const columns = useMemo(() => {
-        return [
-            {
-                align: 'center' as 'center' | 'end' | 'start',
-                id: TableColumn.PLAYLIST_REORDER,
-                isEnabled: true,
-                pinned: 'left' as 'left' | 'right' | null,
-                width: 100,
-            },
-            ...table.columns,
-        ];
-    }, [table.columns]);
-
     const { setListData } = useListContext();
+    const playlistColumns = useMemo(
+        () => table.columns.filter((column) => column.id !== TableColumn.PLAYLIST_REORDER),
+        [table.columns],
+    );
 
     useEffect(() => {
         setListData?.(localData.items);
@@ -398,7 +450,7 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
             return (
                 <PlaylistDetailSongListEditTable
                     autoFitColumns={table.autoFitColumns}
-                    columns={columns}
+                    columns={playlistColumns}
                     data={localData}
                     enableAlternateRowColors={table.enableAlternateRowColors}
                     enableHeader={table.enableHeader}
