@@ -968,6 +968,8 @@
         "showLyricsInSidebar": "show lyrics in player sidebar",
         "showRatings_description": "controls if the star ratings feature shows up in the interface",
         "showRatings": "show star ratings",
+        "showSuccessToasts_description": "show toast messages for successful actions",
+        "showSuccessToasts": "show success toasts",
         "blurExplicitImages": "blur explicit images",
         "blurExplicitImages_description": "album and song artwork tagged as explicit will be blurred",
         "enableGridMultiSelect": "enable grid multi-select",

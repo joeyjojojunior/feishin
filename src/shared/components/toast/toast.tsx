@@ -10,6 +10,7 @@ import {
 import clsx from 'clsx';
 
 import styles from './toast.module.css';
+import { useSettingsStore } from '/@/renderer/store/settings.store';
 
 interface NotificationProps extends Omit<NotificationData, 'message'> {
     message?: string;
@@ -25,6 +26,10 @@ const getTitle = (type: NotificationProps['type']) => {
 };
 
 const showToast = ({ message, onClose, type, ...props }: NotificationProps) => {
+    if (type === 'success' && !useSettingsStore.getState().general.showSuccessToasts) {
+        return '';
+    }
+
     return notifications.show({
         ...props,
         classNames: {

@@ -467,6 +467,7 @@ export const GeneralSettingsSchema = z.object({
     resume: z.boolean(),
     showLyricsInSidebar: z.boolean(),
     showRatings: z.boolean(),
+    showSuccessToasts: z.boolean(),
     showVisualizerInSidebar: z.boolean(),
     sidebarCollapsedNavigation: z.boolean(),
     sidebarCollapseShared: z.boolean(),
@@ -1059,6 +1060,7 @@ const initialState: SettingsState = {
         resume: true,
         showLyricsInSidebar: true,
         showRatings: true,
+        showSuccessToasts: false,
         showVisualizerInSidebar: true,
         sidebarCollapsedNavigation: true,
         sidebarCollapseShared: false,
@@ -2285,10 +2287,16 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     }
                 }
 
+                if (version <= 27) {
+                    if (state.general.showSuccessToasts === undefined) {
+                        state.general.showSuccessToasts = false;
+                    }
+                }
+
                 return persistedState;
             },
             name: 'store_settings',
-            version: 27,
+            version: 28,
         },
     ),
 );

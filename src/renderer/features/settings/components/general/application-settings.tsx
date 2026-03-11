@@ -624,6 +624,27 @@ export const ApplicationSettings = memo(() => {
         {
             control: (
                 <Switch
+                    defaultChecked={settings.showSuccessToasts}
+                    onChange={(e) => {
+                        setSettings({
+                            general: {
+                                ...settings,
+                                showSuccessToasts: e.currentTarget.checked,
+                            },
+                        });
+                    }}
+                />
+            ),
+            description: t('setting.showSuccessToasts', {
+                context: 'description',
+                postProcess: 'sentenceCase',
+            }),
+            isHidden: false,
+            title: t('setting.showSuccessToasts', { postProcess: 'sentenceCase' }),
+        },
+        {
+            control: (
+                <Switch
                     aria-label={t('setting.blurExplicitImages', { postProcess: 'sentenceCase' })}
                     defaultChecked={settings.blurExplicitImages}
                     onChange={(e) =>
