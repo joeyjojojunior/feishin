@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
@@ -18,7 +18,6 @@ import {
     ListConfigMenu,
     SONG_DISPLAY_TYPES,
 } from '/@/renderer/features/shared/components/list-config-menu';
-import { ListDisplayTypeToggleButton } from '/@/renderer/features/shared/components/list-display-type-toggle-button';
 import { isFilterValueSet } from '/@/renderer/features/shared/components/list-filters';
 import { ListRefreshButton } from '/@/renderer/features/shared/components/list-refresh-button';
 import { ListSortByDropdown } from '/@/renderer/features/shared/components/list-sort-by-dropdown';
@@ -29,6 +28,7 @@ import { useContainerQuery } from '/@/renderer/hooks';
 import {
     PlaylistTarget,
     useCurrentServerId,
+    useListSettings,
     usePlaylistTarget,
     useSettingsStoreActions,
 } from '/@/renderer/store';
@@ -43,7 +43,7 @@ import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import { useDisclosure } from '/@/shared/hooks/use-disclosure';
 import { useLocalStorage } from '/@/shared/hooks/use-local-storage';
 import { LibraryItem, SongListSort, SortOrder } from '/@/shared/types/domain-types';
-import { ItemListKey } from '/@/shared/types/types';
+import { ItemListKey, TableColumn } from '/@/shared/types/types';
 
 interface PlaylistDetailSongListHeaderFiltersProps {
     isSmartPlaylist?: boolean;
@@ -119,8 +119,9 @@ export const PlaylistDetailSongListHeaderFilters = ({
     const { listKey: listKeyFromContext } = useListContext();
     const { playlistId } = useParams() as { playlistId: string };
     const playlistTarget = usePlaylistTarget();
-    const { setPlaylistBehavior } = useSettingsStoreActions();
+    const { setList, setPlaylistBehavior } = useSettingsStoreActions();
     const serverId = useCurrentServerId();
+    const playlistSongListSettings = useListSettings(ItemListKey.PLAYLIST_SONG);
 
     const detailQuery = useQuery(playlistsQueries.detail({ query: { id: playlistId }, serverId }));
 
@@ -155,6 +156,43 @@ export const PlaylistDetailSongListHeaderFilters = ({
     const { ref: containerRef } = useContainerQuery();
 
     const isEditMode = !isSmartPlaylist;
+    const isTrackMode = !isAlbumMode;
+
+    useEffect(() => {
+        if (!isTrackMode) {
+            return;
+        }
+
+        const hasEnabledImageColumn = playlistSongListSettings.table.columns.some(
+            (column) => column.id === TableColumn.IMAGE && column.isEnabled,
+        );
+
+        if (!hasEnabledImageColumn) {
+            return;
+        }
+
+        setList(ItemListKey.PLAYLIST_SONG, {
+            table: {
+                columns: playlistSongListSettings.table.columns.map((column) =>
+                    column.id === TableColumn.IMAGE ? { ...column, isEnabled: false } : column,
+                ),
+            },
+        });
+    }, [isTrackMode, playlistSongListSettings.table.columns, setList]);
+
+    const isCompactPlaylistTrackView = useMemo(() => {
+        return playlistSongListSettings.table.size === 'compact';
+    }, [playlistSongListSettings.table.size]);
+
+    const handleToggleCompactPlaylistTrackView = useCallback(() => {
+        const nextCompactState = !isCompactPlaylistTrackView;
+
+        setList(ItemListKey.PLAYLIST_SONG, {
+            table: {
+                size: nextCompactState ? 'compact' : 'default',
+            },
+        });
+    }, [isCompactPlaylistTrackView, setList]);
 
     const [collapsed, setCollapsed] = useLocalStorage<boolean>({
         defaultValue: false,
@@ -190,6 +228,22 @@ export const PlaylistDetailSongListHeaderFilters = ({
                 <MoreButton onClick={handleMore} />
             </Group>
             <Group gap="sm" wrap="nowrap">
+                {isTrackMode && (
+                    <Tooltip
+                        label={t(
+                            `table.config.general.size_${
+                                isCompactPlaylistTrackView ? 'default' : 'compact'
+                            }`,
+                            { postProcess: 'titleCase' },
+                        )}
+                    >
+                        <ActionIcon
+                            icon={isCompactPlaylistTrackView ? 'layoutTable' : 'layoutList'}
+                            onClick={handleToggleCompactPlaylistTrackView}
+                            variant={isCompactPlaylistTrackView ? 'filled' : 'subtle'}
+                        />
+                    </Tooltip>
+                )}
                 <Tooltip
                     label={t(`common.${collapsed ? 'expand' : 'collapse'}`, {
                         postProcess: 'titleCase',
@@ -202,7 +256,6 @@ export const PlaylistDetailSongListHeaderFilters = ({
                         variant="subtle"
                     />
                 </Tooltip>
-                <ListDisplayTypeToggleButton enableDetail={isAlbumMode} listKey={listKey} />
                 {isAlbumMode ? (
                     <ListConfigMenu
                         detailConfig={{
