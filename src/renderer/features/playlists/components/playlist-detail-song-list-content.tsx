@@ -12,6 +12,8 @@ import { PlaylistDetailAlbumView } from '/@/renderer/features/playlists/componen
 import { usePlaylistSongRemoval } from '/@/renderer/features/playlists/hooks/use-playlist-song-removal';
 import { usePlaylistTrackList } from '/@/renderer/features/playlists/hooks/use-playlist-track-list';
 import { useReplacePlaylist } from '/@/renderer/features/playlists/mutations/replace-playlist-mutation';
+import { useSearchTermFilter } from '/@/renderer/features/shared/hooks/use-search-term-filter';
+import { searchLibraryItems } from '/@/renderer/features/shared/utils';
 import { useCurrentServer, useCurrentServerId, useListSettings } from '/@/renderer/store';
 import { Spinner } from '/@/shared/components/spinner/spinner';
 import { toast } from '/@/shared/components/toast/toast';
@@ -168,6 +170,7 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
         isPending: isReplacePlaylistPending,
         mutate: mutateReplacePlaylist,
     } = replacePlaylistMutation;
+    const { searchTerm } = useSearchTermFilter();
     const { recordPlaylistReorder } = usePlaylistSongRemoval();
 
     const [localData, setLocalData] = useState<PlaylistSongListResponse>(data);
@@ -500,15 +503,25 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
         t,
     ]);
 
-    const { setListData } = useListContext();
+    const filteredLocalItems = useMemo(() => {
+        const items = localData.items ?? [];
+        if (!searchTerm?.trim()) {
+            return items;
+        }
+
+        return searchLibraryItems(items, searchTerm, LibraryItem.SONG);
+    }, [localData.items, searchTerm]);
+
+    const { setItemCount, setListData } = useListContext();
     const playlistColumns = useMemo(
         () => table.columns.filter((column) => column.id !== TableColumn.PLAYLIST_REORDER),
         [table.columns],
     );
 
     useEffect(() => {
-        setListData?.(localData.items);
-    }, [localData, setListData]);
+        setListData?.(filteredLocalItems);
+        setItemCount?.(filteredLocalItems.length);
+    }, [filteredLocalItems, setItemCount, setListData]);
 
     switch (display) {
         case ListDisplayType.GRID:
@@ -518,6 +531,7 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
                     autoFitColumns={table.autoFitColumns}
                     columns={playlistColumns}
                     data={localData}
+                    items={filteredLocalItems}
                     enableAlternateRowColors={table.enableAlternateRowColors}
                     enableHeader={table.enableHeader}
                     enableHorizontalBorders={table.enableHorizontalBorders}

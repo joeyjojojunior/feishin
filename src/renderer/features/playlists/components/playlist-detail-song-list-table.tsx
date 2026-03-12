@@ -302,6 +302,7 @@ export const PlaylistDetailSongListEditTable = forwardRef<any, PlaylistDetailSon
             enableRowHoverHighlight = true,
             enableSelection = true,
             enableVerticalBorders = false,
+            items: itemsProp,
             saveScrollOffset = true,
             size = 'default',
         },
@@ -453,13 +454,15 @@ export const PlaylistDetailSongListEditTable = forwardRef<any, PlaylistDetailSon
             };
         }, []);
 
+        const dataToRender = itemsProp ?? data.items;
+
         return (
             <ItemTableList
                 activeRowId={currentSong?.id}
                 autoFitColumns={autoFitColumns}
                 CellComponent={ItemTableListColumn}
                 columns={columns}
-                data={data.items}
+                data={dataToRender}
                 enableAlternateRowColors={enableAlternateRowColors}
                 enableDrag
                 enableExpansion={false}
