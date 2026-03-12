@@ -18,30 +18,35 @@ export const SetFavoriteAction = ({ ids, itemType }: SetFavoriteActionProps) => 
 
     const createFavoriteMutation = useCreateFavorite({});
     const deleteFavoriteMutation = useDeleteFavorite({});
+    const favoriteItemType =
+        itemType === LibraryItem.PLAYLIST_SONG || itemType === LibraryItem.QUEUE_SONG
+            ? LibraryItem.SONG
+            : itemType;
+    const favoriteIds = ids.filter(Boolean);
 
     const handleAddToFavorites = useCallback(() => {
-        if (ids.length === 0 || !serverId) return;
+        if (favoriteIds.length === 0 || !serverId) return;
 
         createFavoriteMutation.mutate({
             apiClientProps: { serverId },
             query: {
-                id: ids,
-                type: itemType,
+                id: favoriteIds,
+                type: favoriteItemType,
             },
         });
-    }, [createFavoriteMutation, ids, itemType, serverId]);
+    }, [createFavoriteMutation, favoriteIds, favoriteItemType, serverId]);
 
     const handleRemoveFromFavorites = useCallback(() => {
-        if (ids.length === 0 || !serverId) return;
+        if (favoriteIds.length === 0 || !serverId) return;
 
         deleteFavoriteMutation.mutate({
             apiClientProps: { serverId },
             query: {
-                id: ids,
-                type: itemType,
+                id: favoriteIds,
+                type: favoriteItemType,
             },
         });
-    }, [deleteFavoriteMutation, ids, itemType, serverId]);
+    }, [deleteFavoriteMutation, favoriteIds, favoriteItemType, serverId]);
 
     return (
         <ContextMenu.Submenu>

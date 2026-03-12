@@ -403,8 +403,13 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
                     (song, index) =>
                         getPlaylistSongKey(song) === getPlaylistSongKey(previousItems[index]),
                 );
+            const isSameItemReferences =
+                isSameOrderAndLength &&
+                mergedItems.every((song, index) => song === previousItems[index]);
 
-            if (isSameOrderAndLength) {
+            // Keep local order stable, but still apply metadata-only updates
+            // (favorite/rating/etc.) coming from optimistic query updates.
+            if (isSameItemReferences) {
                 return prev;
             }
 
