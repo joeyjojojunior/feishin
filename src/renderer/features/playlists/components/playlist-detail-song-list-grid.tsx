@@ -39,7 +39,7 @@ export const PlaylistDetailSongListGrid = forwardRef<any, PlaylistDetailSongList
         onPageChange,
         saveScrollOffset = true,
     }) => {
-        const { removeSongsFromPlaylist } = usePlaylistSongRemoval({ enableUndoHotkey: true });
+        const { removeSongsFromPlaylist } = usePlaylistSongRemoval();
         const { handleOnScrollEnd, scrollOffset } = useItemListScrollPersist({
             enabled: saveScrollOffset,
         });

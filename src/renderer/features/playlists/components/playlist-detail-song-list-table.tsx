@@ -54,7 +54,7 @@ export const PlaylistDetailSongListTable = forwardRef<any, PlaylistDetailSongLis
         },
         ref,
     ) => {
-        const { removeSongsFromPlaylist } = usePlaylistSongRemoval({ enableUndoHotkey: true });
+        const { removeSongsFromPlaylist } = usePlaylistSongRemoval();
         const { handleOnScrollEnd, scrollOffset } = useItemListScrollPersist({
             enabled: saveScrollOffset,
         });
@@ -307,7 +307,7 @@ export const PlaylistDetailSongListEditTable = forwardRef<any, PlaylistDetailSon
         },
         ref,
     ) => {
-        const { removeSongsFromPlaylist } = usePlaylistSongRemoval({ enableUndoHotkey: true });
+        const { removeSongsFromPlaylist } = usePlaylistSongRemoval();
         const { handleOnScrollEnd, scrollOffset } = useItemListScrollPersist({
             enabled: saveScrollOffset,
         });

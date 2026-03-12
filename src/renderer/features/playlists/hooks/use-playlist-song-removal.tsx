@@ -15,6 +15,7 @@ import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
 import { Song } from '/@/shared/types/domain-types';
 
 type PlaylistRemovalEntry = {
+    type: 'removal';
     fallbackSongIds: string[];
     removedSongs: Array<{
         index: number;
@@ -22,7 +23,14 @@ type PlaylistRemovalEntry = {
     }>;
 };
 
-const playlistUndoQueueMap = new Map<string, PlaylistRemovalEntry[]>();
+type PlaylistReorderEntry = {
+    previousPlaylistItemIds: string[];
+    type: 'reorder';
+};
+
+type PlaylistUndoEntry = PlaylistRemovalEntry | PlaylistReorderEntry;
+
+const playlistUndoQueueMap = new Map<string, PlaylistUndoEntry[]>();
 const playlistRemovalInFlightSet = new Set<string>();
 const playlistUndoInFlightSet = new Set<string>();
 let hasRegisteredUndoExitHandler = false;
@@ -35,6 +43,9 @@ const clearUndoQueuesOnExit = () => {
 
 const getPlaylistUndoQueueKey = (serverId: string, playlistId: string) =>
     `${serverId}:${playlistId}`;
+
+const isSamePlaylistOrder = (left: string[], right: string[]) =>
+    left.length === right.length && left.every((id, index) => id === right[index]);
 
 export const usePlaylistSongRemoval = (args?: { enableUndoHotkey?: boolean }) => {
     const { enableUndoHotkey = false } = args || {};
@@ -60,14 +71,60 @@ export const usePlaylistSongRemoval = (args?: { enableUndoHotkey?: boolean }) =>
         if (playlistUndoInFlightSet.has(queueKey)) return;
 
         const undoQueue = playlistUndoQueueMap.get(queueKey);
-        const removal = undoQueue?.[undoQueue.length - 1];
+        const undoEntry = undoQueue?.[undoQueue.length - 1];
 
-        if (!removal) return;
+        if (!undoEntry) return;
 
         playlistUndoInFlightSet.add(queueKey);
 
         try {
-            if (removal.removedSongs.length > 0) {
+            if (undoEntry.type === 'reorder') {
+                const playlistSongsRes = await api.controller.getPlaylistSongList({
+                    apiClientProps: { serverId },
+                    query: { id: playlistId },
+                });
+                const playlistItems = playlistSongsRes?.items ?? [];
+                const songIdByPlaylistItemId = new Map<string, string>();
+                const restoredSongIds: string[] = [];
+                const restoredPlaylistItemIds = new Set<string>();
+
+                playlistItems.forEach((song) => {
+                    if (!song.playlistItemId || !song.id) {
+                        return;
+                    }
+                    songIdByPlaylistItemId.set(song.playlistItemId, song.id);
+                });
+
+                undoEntry.previousPlaylistItemIds.forEach((playlistItemId) => {
+                    const songId = songIdByPlaylistItemId.get(playlistItemId);
+                    if (!songId) {
+                        return;
+                    }
+                    restoredSongIds.push(songId);
+                    restoredPlaylistItemIds.add(playlistItemId);
+                });
+
+                // Keep newly added items by appending their current-order IDs.
+                playlistItems.forEach((song) => {
+                    if (!song.id) {
+                        return;
+                    }
+                    if (song.playlistItemId && restoredPlaylistItemIds.has(song.playlistItemId)) {
+                        return;
+                    }
+                    restoredSongIds.push(song.id);
+                });
+
+                if (restoredSongIds.length === 0) {
+                    return;
+                }
+
+                await replacePlaylistMutation.mutateAsync({
+                    apiClientProps: { serverId },
+                    body: { songId: restoredSongIds },
+                    query: { id: playlistId },
+                });
+            } else if (undoEntry.removedSongs.length > 0) {
                 const playlistSongsRes = await api.controller.getPlaylistSongList({
                     apiClientProps: { serverId },
                     query: { id: playlistId },
@@ -77,7 +134,7 @@ export const usePlaylistSongRemoval = (args?: { enableUndoHotkey?: boolean }) =>
                     .filter((id): id is string => Boolean(id));
 
                 const restoredSongIds = [...nextSongIds];
-                const sortedRemovedSongs = [...removal.removedSongs].sort(
+                const sortedRemovedSongs = [...undoEntry.removedSongs].sort(
                     (a, b) => a.index - b.index,
                 );
 
@@ -94,10 +151,10 @@ export const usePlaylistSongRemoval = (args?: { enableUndoHotkey?: boolean }) =>
                     body: { songId: restoredSongIds },
                     query: { id: playlistId },
                 });
-            } else if (removal.fallbackSongIds.length > 0) {
+            } else if (undoEntry.fallbackSongIds.length > 0) {
                 await addToPlaylistMutation.mutateAsync({
                     apiClientProps: { serverId },
-                    body: { songId: removal.fallbackSongIds },
+                    body: { songId: undoEntry.fallbackSongIds },
                     query: { id: playlistId },
                 });
             } else {
@@ -140,6 +197,32 @@ export const usePlaylistSongRemoval = (args?: { enableUndoHotkey?: boolean }) =>
                   ],
               ]
             : [],
+    );
+
+    const recordPlaylistReorder = useCallback(
+        (previousPlaylistItemIds: string[], nextPlaylistItemIds: string[]) => {
+            if (!serverId || !playlistId) return;
+
+            const previousIds = previousPlaylistItemIds.filter(Boolean);
+            const nextIds = nextPlaylistItemIds.filter(Boolean);
+
+            if (previousIds.length === 0 || nextIds.length === 0) {
+                return;
+            }
+
+            if (isSamePlaylistOrder(previousIds, nextIds)) {
+                return;
+            }
+
+            const queueKey = getPlaylistUndoQueueKey(serverId, playlistId);
+            const undoQueue = playlistUndoQueueMap.get(queueKey) ?? [];
+            undoQueue.push({
+                previousPlaylistItemIds: [...previousIds],
+                type: 'reorder',
+            });
+            playlistUndoQueueMap.set(queueKey, undoQueue);
+        },
+        [playlistId, serverId],
     );
 
     const removePlaylistItems = useCallback(
@@ -217,6 +300,7 @@ export const usePlaylistSongRemoval = (args?: { enableUndoHotkey?: boolean }) =>
                 undoQueue.push({
                     fallbackSongIds: songIds,
                     removedSongs,
+                    type: 'removal',
                 });
                 playlistUndoQueueMap.set(queueKey, undoQueue);
 
@@ -271,5 +355,5 @@ export const usePlaylistSongRemoval = (args?: { enableUndoHotkey?: boolean }) =>
         [confirmRemoveFromPlaylist, playlistId, removePlaylistItems, t],
     );
 
-    return { removeSongsFromPlaylist, undoLastRemoval };
+    return { recordPlaylistReorder, removeSongsFromPlaylist, undoLastRemoval };
 };

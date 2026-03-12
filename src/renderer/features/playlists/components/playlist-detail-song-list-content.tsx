@@ -9,6 +9,7 @@ import { useListContext } from '/@/renderer/context/list-context';
 import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { PlaylistDetailAlbumView } from '/@/renderer/features/playlists/components/playlist-detail-album-view';
+import { usePlaylistSongRemoval } from '/@/renderer/features/playlists/hooks/use-playlist-song-removal';
 import { usePlaylistTrackList } from '/@/renderer/features/playlists/hooks/use-playlist-track-list';
 import { useReplacePlaylist } from '/@/renderer/features/playlists/mutations/replace-playlist-mutation';
 import { useCurrentServer, useCurrentServerId, useListSettings } from '/@/renderer/store';
@@ -167,12 +168,20 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
         isPending: isReplacePlaylistPending,
         mutate: mutateReplacePlaylist,
     } = replacePlaylistMutation;
+    const { recordPlaylistReorder } = usePlaylistSongRemoval();
 
     const [localData, setLocalData] = useState<PlaylistSongListResponse>(data);
 
     const tableRef = useRef<ItemListHandle | null>(null);
     const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const syncedOrderSignatureRef = useRef<string>('');
+    const localOrderIdsRef = useRef<string[]>(
+        (data.items ?? []).map((song) => getPlaylistSongKey(song)),
+    );
+
+    useEffect(() => {
+        localOrderIdsRef.current = (localData.items ?? []).map((song) => getPlaylistSongKey(song));
+    }, [localData.items]);
 
     // Listen for playlist reorder events
     useEffect(() => {
@@ -185,11 +194,30 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
             const reorderedItems = reorderedIds
                 .map((id) => itemMap.get(id))
                 .filter((item): item is NonNullable<typeof item> => item !== undefined);
+            const reorderedIdSet = new Set(reorderedIds);
+            const remainingItems = previousItems.filter(
+                (song) => !reorderedIdSet.has(getPlaylistSongKey(song)),
+            );
 
             return {
                 ...previousData,
-                items: reorderedItems,
+                items: [...reorderedItems, ...remainingItems],
             };
+        };
+
+        const isSameOrder = (left: string[], right: string[]) =>
+            left.length === right.length && left.every((id, index) => id === right[index]);
+
+        const applyReorderedIds = (reorderedIds: string[]) => {
+            const previousIds = localOrderIdsRef.current;
+
+            if (previousIds.length === 0 || isSameOrder(previousIds, reorderedIds)) {
+                return;
+            }
+
+            recordPlaylistReorder(previousIds, reorderedIds);
+            localOrderIdsRef.current = [...reorderedIds];
+            setLocalData((prev) => reorderItemsById(prev, reorderedIds));
         };
 
         const handleReorder = (payload: {
@@ -203,56 +231,57 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
                 return;
             }
 
-            setLocalData((prev) => {
-                if (!prev?.items || !payload.edge) {
-                    return prev;
-                }
+            if (!payload.edge) {
+                return;
+            }
 
-                // Create a list of IDs in current order
-                const currentIds = prev.items.map((item) => getPlaylistSongKey(item));
-                const sourceIdSet = new Set(payload.sourceIds);
-                const sourceIdsInCurrentOrder = currentIds.filter((id) => sourceIdSet.has(id));
+            // Create a list of IDs in current order
+            const currentIds = localOrderIdsRef.current;
+            if (currentIds.length === 0) {
+                return;
+            }
+            const sourceIdSet = new Set(payload.sourceIds);
+            const sourceIdsInCurrentOrder = currentIds.filter((id) => sourceIdSet.has(id));
 
-                if (sourceIdsInCurrentOrder.length === 0) {
-                    return prev;
-                }
+            if (sourceIdsInCurrentOrder.length === 0) {
+                return;
+            }
 
-                // Find the target index
-                const targetIndex = currentIds.indexOf(payload.targetId);
-                if (targetIndex === -1) {
-                    return prev;
-                }
+            // Find the target index
+            const targetIndex = currentIds.indexOf(payload.targetId);
+            if (targetIndex === -1) {
+                return;
+            }
 
-                // Remove all source IDs from their current positions
-                const idsWithoutSources = currentIds.filter((id) => !sourceIdSet.has(id));
+            // Remove all source IDs from their current positions
+            const idsWithoutSources = currentIds.filter((id) => !sourceIdSet.has(id));
 
-                // Calculate the insertion index based on the original target position
-                const sourcesBeforeTarget = sourceIdsInCurrentOrder.filter((id) => {
-                    const sourceIndex = currentIds.indexOf(id);
-                    return sourceIndex !== -1 && sourceIndex < targetIndex;
-                }).length;
+            // Calculate the insertion index based on the original target position
+            const sourcesBeforeTarget = sourceIdsInCurrentOrder.filter((id) => {
+                const sourceIndex = currentIds.indexOf(id);
+                return sourceIndex !== -1 && sourceIndex < targetIndex;
+            }).length;
 
-                // Calculate the insert index in the filtered list
-                const insertIndexInFiltered =
-                    payload.edge === 'top'
-                        ? targetIndex - sourcesBeforeTarget
-                        : targetIndex - sourcesBeforeTarget + 1;
+            // Calculate the insert index in the filtered list
+            const insertIndexInFiltered =
+                payload.edge === 'top'
+                    ? targetIndex - sourcesBeforeTarget
+                    : targetIndex - sourcesBeforeTarget + 1;
 
-                // Ensure insertIndex is within bounds
-                const insertIndex = Math.max(
-                    0,
-                    Math.min(insertIndexInFiltered, idsWithoutSources.length),
-                );
+            // Ensure insertIndex is within bounds
+            const insertIndex = Math.max(
+                0,
+                Math.min(insertIndexInFiltered, idsWithoutSources.length),
+            );
 
-                // Insert source IDs at the calculated position
-                const reorderedIds = [
-                    ...idsWithoutSources.slice(0, insertIndex),
-                    ...sourceIdsInCurrentOrder,
-                    ...idsWithoutSources.slice(insertIndex),
-                ];
+            // Insert source IDs at the calculated position
+            const reorderedIds = [
+                ...idsWithoutSources.slice(0, insertIndex),
+                ...sourceIdsInCurrentOrder,
+                ...idsWithoutSources.slice(insertIndex),
+            ];
 
-                return reorderItemsById(prev, reorderedIds);
-            });
+            applyReorderedIds(reorderedIds);
         };
 
         const handleMoveToTop = (payload: { playlistId: string; sourceIds: string[] }) => {
@@ -260,24 +289,22 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
                 return;
             }
 
-            setLocalData((prev) => {
-                if (!prev?.items?.length || payload.sourceIds.length === 0) {
-                    return prev;
-                }
+            const currentIds = localOrderIdsRef.current;
+            if (currentIds.length === 0 || payload.sourceIds.length === 0) {
+                return;
+            }
 
-                const currentIds = prev.items.map((item) => getPlaylistSongKey(item));
-                const sourceIdSet = new Set(payload.sourceIds);
-                const sourceIdsInCurrentOrder = currentIds.filter((id) => sourceIdSet.has(id));
+            const sourceIdSet = new Set(payload.sourceIds);
+            const sourceIdsInCurrentOrder = currentIds.filter((id) => sourceIdSet.has(id));
 
-                if (sourceIdsInCurrentOrder.length === 0) {
-                    return prev;
-                }
+            if (sourceIdsInCurrentOrder.length === 0) {
+                return;
+            }
 
-                const idsWithoutSources = currentIds.filter((id) => !sourceIdSet.has(id));
-                const reorderedIds = [...sourceIdsInCurrentOrder, ...idsWithoutSources];
+            const idsWithoutSources = currentIds.filter((id) => !sourceIdSet.has(id));
+            const reorderedIds = [...sourceIdsInCurrentOrder, ...idsWithoutSources];
 
-                return reorderItemsById(prev, reorderedIds);
-            });
+            applyReorderedIds(reorderedIds);
         };
 
         const handleMoveToBottom = (payload: { playlistId: string; sourceIds: string[] }) => {
@@ -285,24 +312,22 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
                 return;
             }
 
-            setLocalData((prev) => {
-                if (!prev?.items?.length || payload.sourceIds.length === 0) {
-                    return prev;
-                }
+            const currentIds = localOrderIdsRef.current;
+            if (currentIds.length === 0 || payload.sourceIds.length === 0) {
+                return;
+            }
 
-                const currentIds = prev.items.map((item) => getPlaylistSongKey(item));
-                const sourceIdSet = new Set(payload.sourceIds);
-                const sourceIdsInCurrentOrder = currentIds.filter((id) => sourceIdSet.has(id));
+            const sourceIdSet = new Set(payload.sourceIds);
+            const sourceIdsInCurrentOrder = currentIds.filter((id) => sourceIdSet.has(id));
 
-                if (sourceIdsInCurrentOrder.length === 0) {
-                    return prev;
-                }
+            if (sourceIdsInCurrentOrder.length === 0) {
+                return;
+            }
 
-                const idsWithoutSources = currentIds.filter((id) => !sourceIdSet.has(id));
-                const reorderedIds = [...idsWithoutSources, ...sourceIdsInCurrentOrder];
+            const idsWithoutSources = currentIds.filter((id) => !sourceIdSet.has(id));
+            const reorderedIds = [...idsWithoutSources, ...sourceIdsInCurrentOrder];
 
-                return reorderItemsById(prev, reorderedIds);
-            });
+            applyReorderedIds(reorderedIds);
         };
 
         eventEmitter.on('PLAYLIST_REORDER', handleReorder);
@@ -314,7 +339,7 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
             eventEmitter.off('PLAYLIST_MOVE_TO_TOP', handleMoveToTop);
             eventEmitter.off('PLAYLIST_MOVE_TO_BOTTOM', handleMoveToBottom);
         };
-    }, [playlistId]);
+    }, [playlistId, recordPlaylistReorder]);
 
     // Keep edit-mode local data in sync with server changes (delete/undo) without
     // discarding unsaved local ordering.
@@ -322,17 +347,53 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
         setLocalData((prev) => {
             const incomingItems = data?.items ?? [];
             const previousItems = prev?.items ?? [];
+            const incomingByKey = new Map<string, Song>();
+            const incomingBySongId = new Map<string, Song[]>();
 
-            const incomingByKey = new Map(
-                incomingItems.map((song) => [getPlaylistSongKey(song), song]),
-            );
-            const preservedOrderItems = previousItems
-                .filter((song) => incomingByKey.has(getPlaylistSongKey(song)))
-                .map((song) => incomingByKey.get(getPlaylistSongKey(song)) ?? song);
+            incomingItems.forEach((song) => {
+                incomingByKey.set(getPlaylistSongKey(song), song);
+                if (!song.id) {
+                    return;
+                }
+                const bucket = incomingBySongId.get(song.id) ?? [];
+                bucket.push(song);
+                incomingBySongId.set(song.id, bucket);
+            });
 
-            const preservedKeys = new Set(preservedOrderItems.map(getPlaylistSongKey));
+            const consumedBySongId = new Map<string, number>();
+            const usedIncomingKeys = new Set<string>();
+            const preservedOrderItems: Song[] = [];
+
+            // Keep local order stable across server updates that may regenerate playlistItemId.
+            previousItems.forEach((song) => {
+                if (song.id) {
+                    const bucket = incomingBySongId.get(song.id);
+                    const consumed = consumedBySongId.get(song.id) ?? 0;
+                    const match = bucket?.[consumed];
+                    if (match) {
+                        preservedOrderItems.push(match);
+                        consumedBySongId.set(song.id, consumed + 1);
+                        usedIncomingKeys.add(getPlaylistSongKey(match));
+                    }
+                    return;
+                }
+
+                // Only use key fallback for rows that don't have a song id.
+                const fallbackKey = getPlaylistSongKey(song);
+                const fallbackMatch = incomingByKey.get(fallbackKey);
+                if (!fallbackMatch) {
+                    return;
+                }
+                const fallbackMatchKey = getPlaylistSongKey(fallbackMatch);
+                if (usedIncomingKeys.has(fallbackMatchKey)) {
+                    return;
+                }
+                preservedOrderItems.push(fallbackMatch);
+                usedIncomingKeys.add(fallbackMatchKey);
+            });
+
             const appendedIncomingItems = incomingItems.filter(
-                (song) => !preservedKeys.has(getPlaylistSongKey(song)),
+                (song) => !usedIncomingKeys.has(getPlaylistSongKey(song)),
             );
 
             const mergedItems = [...preservedOrderItems, ...appendedIncomingItems];
@@ -469,6 +530,9 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
 };
 
 const PlaylistDetailTrackView = ({ data }: { data: PlaylistSongListResponse }) => {
+    usePlaylistSongRemoval({
+        enableUndoHotkey: true,
+    });
     const { isSmartPlaylist } = useListContext();
 
     if (isSmartPlaylist) {
