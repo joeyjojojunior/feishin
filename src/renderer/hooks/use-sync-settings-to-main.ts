@@ -67,10 +67,9 @@ export const useSyncSettingsToMain = () => {
                     mainStoreKey: 'window_minimize_to_tray',
                     rendererValue: settings.window.minimizeToTray,
                 },
-                {
-                    mainStoreKey: 'disable_auto_updates',
-                    rendererValue: settings.window.disableAutoUpdate,
-                },
+                // Intentionally not synced here: this setting is written directly from the
+                // updates settings UI. Keeping it out of bulk sync prevents stale renderer
+                // state from unintentionally re-enabling automatic updates in main settings.
                 // For some reason after the application is updated, the release channel from the
                 // renderer is always set to the latest channel. This causes an infinite update loop
                 // {

@@ -1,4 +1,5 @@
 import { set } from 'idb-keyval';
+import chunk from 'lodash/chunk';
 import orderBy from 'lodash/orderBy';
 
 import { ndApiClient } from '/@/renderer/api/navidrome/navidrome-api';
@@ -77,6 +78,8 @@ const EXCLUDED_SONG_TAGS = new Set<string>(['disctotal', 'tracktotal']);
 // Defining a re-usable Collator instance for performance reasons.
 const numericSortCollator = new Intl.Collator(undefined, { numeric: true });
 const collator = new Intl.Collator();
+const MAX_NAVIDROME_PLAYLIST_ADD_ITEMS = 500;
+const MAX_NAVIDROME_PLAYLIST_QUERY_ITEMS = 100;
 
 // Tags that use IDs as values as opposed to the tag value
 const ID_TAGS = new Set<string>(['albumversion', 'mood']);
@@ -108,17 +111,55 @@ export const NavidromeController: InternalControllerEndpoint = {
     addToPlaylist: async (args) => {
         const { apiClientProps, body, query } = args;
 
-        const res = await ndApiClient(apiClientProps).addToPlaylist({
-            body: {
-                ids: body.songId,
-            },
+        const existingSongsRes = await ndApiClient(apiClientProps as any).getPlaylistSongList({
             params: {
                 id: query.id,
             },
+            query: {
+                _end: -1,
+                _order: 'ASC',
+                _start: 0,
+            },
         });
 
-        if (res.status !== 200) {
-            throw new Error('Failed to add to playlist');
+        if (existingSongsRes.status !== 200) {
+            throw new Error('Failed to fetch existing playlist songs');
+        }
+
+        const existingSongIds = new Set(
+            existingSongsRes.body.data
+                .map((song) => song.mediaFileId || song.id)
+                .filter((id): id is string => Boolean(id)),
+        );
+        const seenSongIds = new Set<string>();
+        const songIdsToAdd = body.songId.filter((songId) => {
+            if (!songId || existingSongIds.has(songId) || seenSongIds.has(songId)) {
+                return false;
+            }
+
+            seenSongIds.add(songId);
+            return true;
+        });
+
+        if (songIdsToAdd.length === 0) {
+            return null;
+        }
+
+        const addChunks = chunk(songIdsToAdd, MAX_NAVIDROME_PLAYLIST_ADD_ITEMS);
+
+        for (const songIdChunk of addChunks) {
+            const res = await ndApiClient(apiClientProps).addToPlaylist({
+                body: {
+                    ids: songIdChunk,
+                },
+                params: {
+                    id: query.id,
+                },
+            });
+
+            if (res.status !== 200) {
+                throw new Error('Failed to add to playlist');
+            }
         }
 
         return null;
@@ -600,14 +641,19 @@ export const NavidromeController: InternalControllerEndpoint = {
         }
 
         return {
-            items: res.body.data.map((item) =>
-                ndNormalize.song(
+            items: res.body.data.map((item) => {
+                const song = ndNormalize.song(
                     item,
                     apiClientProps.server,
                     args.context?.pathReplace,
                     args.context?.pathReplaceWith,
-                ),
-            ),
+                );
+
+                return {
+                    ...song,
+                    playlistItemId: song.playlistItemId || item.id,
+                };
+            }),
             startIndex: 0,
             totalRecordCount: Number(res.body.headers.get('x-total-count') || 0),
         };
@@ -933,17 +979,21 @@ export const NavidromeController: InternalControllerEndpoint = {
     removeFromPlaylist: async (args) => {
         const { apiClientProps, query } = args;
 
-        const res = await ndApiClient(apiClientProps).removeFromPlaylist({
-            params: {
-                id: query.id,
-            },
-            query: {
-                id: query.songId,
-            },
-        });
+        const removeChunks = chunk(query.songId, MAX_NAVIDROME_PLAYLIST_QUERY_ITEMS);
 
-        if (res.status !== 200) {
-            throw new Error('Failed to remove from playlist');
+        for (const songIdChunk of removeChunks) {
+            const res = await ndApiClient(apiClientProps).removeFromPlaylist({
+                params: {
+                    id: query.id,
+                },
+                query: {
+                    id: songIdChunk,
+                },
+            });
+
+            if (res.status !== 200) {
+                throw new Error('Failed to remove from playlist');
+            }
         }
 
         return null;
@@ -960,7 +1010,6 @@ export const NavidromeController: InternalControllerEndpoint = {
                 _end: -1,
                 _order: 'ASC',
                 _start: 0,
-                ...excludeMissing(apiClientProps.server),
             },
         });
 
@@ -1004,39 +1053,92 @@ export const NavidromeController: InternalControllerEndpoint = {
 
         // 4. Remove all songs from the playlist
         if (existingSongs.length > 0) {
-            const existingPlaylistItemIds = existingSongs
-                .map((song) => song.playlistItemId)
-                .filter((id): id is string => id !== undefined && id !== null);
+            const removeByEntryIds = async (playlistEntryIds: string[]) => {
+                const removeChunks = chunk(playlistEntryIds, MAX_NAVIDROME_PLAYLIST_QUERY_ITEMS);
 
-            if (existingPlaylistItemIds.length > 0) {
-                const removeRes = await ndApiClient(apiClientProps).removeFromPlaylist({
+                for (const playlistItemChunk of removeChunks) {
+                    const removeRes = await ndApiClient(apiClientProps).removeFromPlaylist({
+                        params: {
+                            id: query.id,
+                        },
+                        query: {
+                            id: playlistItemChunk,
+                        },
+                    });
+
+                    if (removeRes.status !== 200) {
+                        throw new Error('Failed to remove songs from playlist');
+                    }
+                }
+            };
+
+            let remainingEntryIds = Array.from(
+                new Set(
+                    existingSongsRes.body.data
+                        .map((song) => song.id)
+                        .filter((id): id is string => Boolean(id)),
+                ),
+            );
+
+            let removeAttempts = 0;
+            while (remainingEntryIds.length > 0 && removeAttempts < 20) {
+                const previousRemainingCount = remainingEntryIds.length;
+                await removeByEntryIds(remainingEntryIds);
+                removeAttempts += 1;
+
+                const verifyRes = await ndApiClient(apiClientProps as any).getPlaylistSongList({
                     params: {
                         id: query.id,
                     },
                     query: {
-                        id: existingPlaylistItemIds,
+                        _end: -1,
+                        _order: 'ASC',
+                        _start: 0,
                     },
                 });
 
-                if (removeRes.status !== 200) {
-                    throw new Error('Failed to remove songs from playlist');
+                if (verifyRes.status !== 200) {
+                    throw new Error('Failed to verify playlist removal');
                 }
+
+                remainingEntryIds = Array.from(
+                    new Set(
+                        verifyRes.body.data
+                            .map((song) => song.id)
+                            .filter((id): id is string => Boolean(id)),
+                    ),
+                );
+
+                if (
+                    remainingEntryIds.length > 0 &&
+                    remainingEntryIds.length >= previousRemainingCount
+                ) {
+                    break;
+                }
+            }
+
+            if (remainingEntryIds.length > 0) {
+                throw new Error('Failed to clear playlist before replacing songs');
             }
         }
 
         // 5. Add the new song ids to the playlist
         if (body.songId.length > 0) {
-            const addRes = await ndApiClient(apiClientProps).addToPlaylist({
-                body: {
-                    ids: body.songId,
-                },
-                params: {
-                    id: query.id,
-                },
-            });
+            const addChunks = chunk(body.songId, MAX_NAVIDROME_PLAYLIST_ADD_ITEMS);
 
-            if (addRes.status !== 200) {
-                throw new Error('Failed to add songs to playlist');
+            for (const songIdChunk of addChunks) {
+                const addRes = await ndApiClient(apiClientProps).addToPlaylist({
+                    body: {
+                        ids: songIdChunk,
+                    },
+                    params: {
+                        id: query.id,
+                    },
+                });
+
+                if (addRes.status !== 200) {
+                    throw new Error('Failed to add songs to playlist');
+                }
             }
         }
 

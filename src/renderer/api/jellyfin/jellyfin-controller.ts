@@ -96,7 +96,39 @@ export const JellyfinController: InternalControllerEndpoint = {
             throw new Error('No userId found');
         }
 
-        const chunks = chunk(body.songId, MAX_ITEMS_PER_PLAYLIST_ADD);
+        const existingSongsRes = await jfApiClient(apiClientProps).getPlaylistSongList({
+            params: {
+                id: query.id,
+            },
+            query: {
+                Fields: JF_FIELDS.SONG,
+                IncludeItemTypes: 'Audio',
+                UserId: apiClientProps.server.userId,
+            },
+        });
+
+        if (existingSongsRes.status !== 200) {
+            throw new Error('Failed to fetch existing playlist songs');
+        }
+
+        const existingSongIds = new Set(
+            existingSongsRes.body.Items.map((song) => song.Id).filter((id): id is string => !!id),
+        );
+        const seenSongIds = new Set<string>();
+        const songIdsToAdd = body.songId.filter((songId) => {
+            if (!songId || existingSongIds.has(songId) || seenSongIds.has(songId)) {
+                return false;
+            }
+
+            seenSongIds.add(songId);
+            return true;
+        });
+
+        if (songIdsToAdd.length === 0) {
+            return null;
+        }
+
+        const chunks = chunk(songIdsToAdd, MAX_ITEMS_PER_PLAYLIST_ADD);
 
         for (const chunk of chunks) {
             const res = await jfApiClient(apiClientProps).addToPlaylist({

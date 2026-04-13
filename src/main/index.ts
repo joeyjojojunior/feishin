@@ -528,6 +528,11 @@ async function createWindow(first = true): Promise<void> {
                 return { updateAvailable: false };
             }
 
+            if (store.get('disable_auto_updates') === true) {
+                console.log('Auto updates are disabled by user setting');
+                return { updateAvailable: false };
+            }
+
             try {
                 console.log('Checking for updates');
                 const effectiveChannel = store.get('release_channel') as string;

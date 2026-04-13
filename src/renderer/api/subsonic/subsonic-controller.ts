@@ -2,6 +2,7 @@ import type { ServerInferResponses } from '@ts-rest/core';
 
 import dayjs from 'dayjs';
 import { set } from 'idb-keyval';
+import chunk from 'lodash/chunk';
 import filter from 'lodash/filter';
 import orderBy from 'lodash/orderBy';
 import md5 from 'md5';
@@ -89,15 +90,48 @@ function sortAndPaginate<T>(
 
 export const SubsonicController: InternalControllerEndpoint = {
     addToPlaylist: async ({ apiClientProps, body, query }) => {
-        const res = await ssApiClient(apiClientProps).updatePlaylist({
+        const existingSongsRes = await ssApiClient(apiClientProps).getPlaylist({
             query: {
-                playlistId: query.id,
-                songIdToAdd: body.songId,
+                id: query.id,
             },
         });
 
-        if (res.status !== 200) {
-            throw new Error('Failed to add to playlist');
+        if (existingSongsRes.status !== 200) {
+            throw new Error('Failed to fetch existing playlist songs');
+        }
+
+        const existingSongIds = new Set(
+            (existingSongsRes.body.playlist.entry || [])
+                .map((song) => song.id)
+                .filter((id): id is string => Boolean(id)),
+        );
+        const seenSongIds = new Set<string>();
+        const songIdsToAdd = body.songId.filter((songId) => {
+            if (!songId || existingSongIds.has(songId) || seenSongIds.has(songId)) {
+                return false;
+            }
+
+            seenSongIds.add(songId);
+            return true;
+        });
+
+        if (songIdsToAdd.length === 0) {
+            return null;
+        }
+
+        const addChunks = chunk(songIdsToAdd, MAX_SUBSONIC_ITEMS);
+
+        for (const songIdChunk of addChunks) {
+            const res = await ssApiClient(apiClientProps).updatePlaylist({
+                query: {
+                    playlistId: query.id,
+                    songIdToAdd: songIdChunk,
+                },
+            });
+
+            if (res.status !== 200) {
+                throw new Error('Failed to add to playlist');
+            }
         }
 
         return null;
